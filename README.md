@@ -2,8 +2,6 @@
 
 ## Project brief
 
-Recorded on 2026-10-13 for future work in this workspace.
-
 Design a program written in Python that runs on my PC and:
 
 1. Takes audio input from the microphone.
