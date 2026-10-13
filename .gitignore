@@ -1,0 +1,5 @@
+.venv/
+.venv-system-tk-backup/
+__pycache__/
+*.pyc
+.DS_Store
