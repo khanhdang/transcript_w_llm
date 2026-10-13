@@ -62,6 +62,21 @@ The default speech model is `base`, running on CPU. Its first use downloads weig
 
 ## Behavior and troubleshooting
 
+### Prepare slides and translations
+
+Before listening, click **Load slides / context**. Supported files:
+
+- `.pptx`: imports selectable slide text in presentation order. Images, charts, and speaker notes are not extracted.
+- `.txt`: one slide per section, separated by a line containing `---`.
+- `.md` / `.markdown`: Markdown slides separated by a line containing `---`. The first heading names each slide. Markdown text is retained as recognition/translation context; YAML front matter (such as Marp settings) is skipped, and separators inside fenced code blocks stay in their slide. Images are not extracted. See [examples/slides.md](examples/slides.md).
+- `.json`: slide text, speaking notes, a bilingual glossary, and prepared translations. Start with [examples/presentation-context.json](examples/presentation-context.json).
+
+In a JSON file, `target` identifies the glossary's translation language (use the same language name as **Translate to**). `glossary` maps source terms to preferred translated terms. Each slide can contain `title`, `text`, `notes`, and a `prepared` list. Each prepared entry needs `source` (what you plan to say), `translation`, and `target` (for example, `Japanese`). You can put exported slide text and your translations into this file together. Loading a file replaces the previous context; it does not merge files.
+
+Select the current slide with the dropdown or **Previous / Next**, including while listening. Navigation is manual and does not control or follow PowerPoint. The selected slide supplies a bounded vocabulary/context hint to Whisper and reference material to Ollama. Glossary entries and prepared examples are used only for their specified target language. Prepared translations are displayed directly when the entire recognized caption matches a prepared source, ignoring punctuation, spacing, and case. Other speech is translated normally with the slide context. For best matching, make each prepared source a complete sentence or the complete group of sentences you expect in a caption.
+
+Slide changes take effect at the next recognition chunk. Pending sentence fragments are translated with their original slide context before processing the new slide. Switch slides near a pause to avoid a recording chunk spanning two slides. Loading and removing context are disabled while listening. The context stays local and is sent only to the configured local Ollama service; it can improve terminology but recognition hints can also bias errors. Context is kept in memory for this session; load the file again after restarting.
+
 ### Subtitles over slides
 
 Enable **Show slide subtitles** to display the latest translation in a borderless, always-on-top panel near the bottom of the screen. Use **Preview subtitles** to position it before speaking. Drag the panel to move it, including onto a second display; **Reset position** returns it to the main screen. Adjust **Text size** and **Opacity** in the main window. The panel shows white text on a dark background, without timestamps, and keeps the latest translation visible until another arrives or you click **Clear**.

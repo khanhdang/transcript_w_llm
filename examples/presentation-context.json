@@ -1,0 +1,26 @@
+{
+  "target": "Japanese",
+  "glossary": {
+    "event camera": "イベントカメラ",
+    "latency": "遅延"
+  },
+  "slides": [
+    {
+      "title": "Event cameras",
+      "text": "Event cameras detect changes in brightness. Low latency is a key advantage.",
+      "notes": "Introduce event cameras and explain their advantages.",
+      "prepared": [
+        {
+          "source": "Event cameras detect changes in brightness.",
+          "translation": "イベントカメラは明るさの変化を検出します。",
+          "target": "Japanese"
+        }
+      ]
+    },
+    {
+      "title": "Latency",
+      "text": "Lower latency helps fast motion tracking.",
+      "prepared": []
+    }
+  ]
+}

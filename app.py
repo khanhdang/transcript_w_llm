@@ -16,6 +16,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from backend import AudioBuffer, OllamaClient
 from overlay import SubtitleOverlay
 from captions import SentenceBuffer
+from presentation import load_presentation, recognition_hint, translation_context, prepared_translation
 
 LANGUAGES = {"Auto detect": None, "English": "en", "Vietnamese": "vi",
              "Japanese": "ja", "Chinese": "zh", "Korean": "ko", "French": "fr",
@@ -34,6 +35,9 @@ class App:
         self.recognizer = None
         self.recognizer_name = None
         self.sentence_buffer = SentenceBuffer()
+        self.presentation = None
+        self.context_snapshot = None
+        self.active_context = None
         self.devices = {"System default": None}
         self.fields = {}
         self.overlay = SubtitleOverlay(root)
@@ -63,6 +67,20 @@ class App:
             widget.grid(row=row, column=1, sticky="ew", padx=12, pady=3)
             self.inputs.append(widget)
         settings.columnconfigure(1, weight=1)
+        context_panel = ttk.Labelframe(frame, text="Presentation context", padding=6)
+        context_panel.pack(fill="x", pady=(8, 0))
+        self.load_context_button = ttk.Button(context_panel, text="Load slides / context", command=self.load_context)
+        self.load_context_button.pack(side="left")
+        self.clear_context_button = ttk.Button(context_panel, text="Remove", command=self.remove_context)
+        self.clear_context_button.pack(side="left", padx=4)
+        self.slide_var = tk.StringVar()
+        self.slide_selector = ttk.Combobox(context_panel, textvariable=self.slide_var, state="readonly", width=32)
+        self.slide_selector.pack(side="left", padx=4)
+        self.slide_selector.bind("<<ComboboxSelected>>", self.select_slide)
+        ttk.Button(context_panel, text="Previous", command=lambda: self.move_slide(-1)).pack(side="left")
+        ttk.Button(context_panel, text="Next", command=lambda: self.move_slide(1)).pack(side="left", padx=4)
+        self.context_label = tk.StringVar(value="No presentation loaded")
+        ttk.Label(context_panel, textvariable=self.context_label).pack(side="left", padx=4)
         controls = ttk.Frame(frame)
         controls.pack(fill="x", pady=12)
         self.start_button = ttk.Button(controls, text="Start listening", command=self.start)
@@ -105,6 +123,40 @@ class App:
         root.after(100, self.poll)
         self.refresh()
 
+    def load_context(self):
+        path = filedialog.askopenfilename(filetypes=[("Presentation context", "*.json *.pptx *.txt *.md *.markdown"),
+                                                   ("Markdown slides", "*.md *.markdown")])
+        if not path:
+            return
+        try:
+            data = load_presentation(path)
+        except Exception as exc:
+            messagebox.showerror("Presentation load failed", str(exc))
+            return
+        self.presentation = data
+        self.slide_selector.configure(values=[str(i + 1) + ": " + (s.get("title") or s.get("text", "").split("\n")[0] or "Slide")[:45]
+                                              for i, s in enumerate(data["slides"])])
+        self.slide_selector.current(0)
+        self.select_slide()
+        self.context_label.set(str(len(data["slides"])) + " slides loaded")
+
+    def remove_context(self):
+        self.presentation = None
+        self.context_snapshot = None
+        self.slide_selector.configure(values=[])
+        self.slide_var.set("")
+        self.context_label.set("No presentation loaded")
+
+    def select_slide(self, event=None):
+        if self.presentation is not None:
+            self.context_snapshot = (self.presentation, self.slide_selector.current())
+
+    def move_slide(self, step):
+        if self.presentation is not None:
+            index = max(0, min(len(self.presentation["slides"]) - 1, self.slide_selector.current() + step))
+            self.slide_selector.current(index)
+            self.select_slide()
+
     def refresh(self):
         url = self.fields["Ollama address"].get()
         self.refresh_button.configure(state="disabled")
@@ -142,6 +194,7 @@ class App:
             return
         self.running = True
         self.sentence_buffer = SentenceBuffer()
+        self.active_context = self.context_snapshot
         self.stop_event.clear()
         self.set_controls(True)
         device = self.devices.get(config["Microphone"])
@@ -183,13 +236,19 @@ class App:
                     self.process(audio, rate, config, client)
             remaining = self.sentence_buffer.flush()
             if remaining:
-                self.translate_caption(remaining, time.strftime("%H:%M:%S"), config, client)
+                self.translate_caption(remaining, time.strftime("%H:%M:%S"), config, client, self.active_context)
         except Exception as exc:
             self.events.put(("error", str(exc)))
         finally:
             self.events.put(("finished", None))
 
     def process(self, audio, rate, config, client):
+        context = self.context_snapshot
+        if context != self.active_context:
+            remaining = self.sentence_buffer.flush()
+            if remaining:
+                self.translate_caption(remaining, time.strftime("%H:%M:%S"), config, client, self.active_context)
+            self.active_context = context
         self.events.put(("status", "Transcribing…"))
         wav = io.BytesIO()
         with wave.open(wav, "wb") as output:
@@ -200,25 +259,31 @@ class App:
         wav.seek(0)
         segments, info = self.recognizer.transcribe(
             wav, language=LANGUAGES[config["Spoken language"]], vad_filter=True,
-            beam_size=1, condition_on_previous_text=False)
+            beam_size=1, condition_on_previous_text=False,
+            initial_prompt=recognition_hint(*context) if context else None)
         text = " ".join(segment.text.strip() for segment in segments).strip()
         stamp = time.strftime("%H:%M:%S")
         if text:
             self.events.put(("transcript", "[" + stamp + "] " + text + "\n\n"))
         ready = self.sentence_buffer.feed(text)
         if ready:
-            self.translate_caption(ready, stamp, config, client)
+            self.translate_caption(ready, stamp, config, client, context)
 
-    def translate_caption(self, text, stamp, config, client):
+    def translate_caption(self, text, stamp, config, client, context=None):
         self.events.put(("status", "Translating to " + config["Translate to"] + "…"))
         try:
-            translated = client.translate(text, config["Translate to"], config["Ollama model"])
+            translated = prepared_translation(*context, text, config["Translate to"]) if context else None
+            if translated is None:
+                reference = translation_context(*context, config["Translate to"]) if context else None
+                translated = client.translate(text, config["Translate to"], config["Ollama model"], context=reference)
             self.events.put(("subtitle", translated))
         except Exception as exc:
             translated = "[Translation failed: " + str(exc) + "]"
         self.events.put(("translation", "[" + stamp + "] " + translated + "\n\n"))
 
     def set_controls(self, running):
+        self.load_context_button.configure(state="disabled" if running else "normal")
+        self.clear_context_button.configure(state="disabled" if running else "normal")
         self.start_button.configure(state="disabled" if running else "normal")
         self.stop_button.configure(state="normal" if running else "disabled")
         self.refresh_button.configure(state="disabled" if running else "normal")
