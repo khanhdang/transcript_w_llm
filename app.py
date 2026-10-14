@@ -54,7 +54,7 @@ class App:
             ("Speech model", "base", ["tiny", "base", "small", "medium", "large-v3"]),
             ("Ollama model", "", []),
             ("Ollama address", "http://localhost:11434", None),
-            ("Chunk seconds", "5", ["3", "5", "8", "10"]),
+            ("Chunk seconds", "3", ["1", "2", "3", "5", "8", "10"]),
         ]
         self.inputs = []
         for row, (label, default, choices) in enumerate(definitions):
@@ -222,10 +222,14 @@ class App:
                     self.events.put(("status", "Microphone warning: " + str(status)))
             with sd.RawInputStream(device=device, samplerate=rate, channels=1,
                                    dtype="int16", callback=callback):
+                next_chunk = time.monotonic() + seconds
                 while not self.stop_event.is_set():
                     self.events.put(("status", "Listening…"))
-                    self.stop_event.wait(seconds)
+                    # Capture continues during processing. Only wait for the
+                    # remainder of the interval, not another full interval.
+                    self.stop_event.wait(max(0, next_chunk - time.monotonic()))
                     audio, dropped = buffer.take()
+                    next_chunk = time.monotonic() + seconds
                     if dropped:
                         self.events.put(("status", "Processing is slower than recording; older audio was dropped. Try a smaller model or longer chunks."))
                     if len(audio) < rate // 2:

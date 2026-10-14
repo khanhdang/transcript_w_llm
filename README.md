@@ -87,7 +87,8 @@ Start listening, enable the overlay, then switch to your slides. The panel recei
 
 Use a windowed slide show or borderless presentation mode if full-screen slides cover the overlay. Native full-screen macOS Spaces and some exclusive full-screen applications can hide other app windows. For remote presentations, share the whole display containing both slides and subtitles; sharing only the slide application may exclude the overlay.
 
-- The display updates in chunks, not word by word. The default recording interval is 5 seconds, plus recognition and translation time. Chunk boundaries can split sentences.
+- The display updates in chunks, not word by word. The default recording interval is 3 seconds, plus recognition and translation time. Audio captured during processing counts toward the next interval, so processing does not add another full recording wait. Chunk boundaries can split sentences.
+- For faster results, select `tiny`, choose the actual **Spoken language** instead of **Auto detect**, and try **Chunk seconds** of `2` or `3`. Smaller models can reduce accuracy; shorter chunks can split words and sentences. Translation and sentence buffering still add latency, so shorter chunks alone will not fix slow model processing.
 - Microphone capture continues during processing. Up to 30 seconds of recent audio is buffered. If processing cannot keep up, older audio is dropped and a status warning appears. Try `tiny` speech recognition or a smaller Ollama model.
 - A quiet segment is filtered by faster-whisper's voice activity detector. Recognition can still make mistakes, particularly with noise.
 - If Ollama is unreachable, open the Ollama app or run `ollama serve`. Use **Refresh microphones / models** after downloading a model.
